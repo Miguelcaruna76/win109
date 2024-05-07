@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Download Windows 10 ISO
+        run: |
+          $url = "https://go.microsoft.com/fwlink/p/?LinkID=2195404&clcid=0x409&culture=en-us&country=US"
+          $outputPath = "C:\temp\win.iso"
+          Invoke-WebRequest -Uri $url -OutFile $outputPath
+
+      - name: Set up ngrok
+        run: |
+          Invoke-WebRequest -Uri "https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+          Expand-Archive -Path "ngrok.zip" -DestinationPath "ngrok"
+        shell: powershell
+
+      - name: Auth ngrok
+        run: |
+          try {
+            .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+          } catch {
+            Write-Host "Ngrok authentication failed: $_"
+            exit 1
+          }
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: Enable Terminal Server
+        run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+
+      - name: Enable Remote Desktop Firewall Rule
+        run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+      - name: Enable RDP User Authentication
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          New-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd" -Force)
+        shell: powershell
+
+      - name: Set Shutdown Time
+        run: shutdown /s /t 86400000
+
+      - name: Create Tunnel
+        run: .\ngrok\ngrok.exe tcp 3389
