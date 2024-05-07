@@ -1,0 +1,36 @@
+name: CI
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Download Windows 10 ISO
+        run: |
+          mkdir C:\temp
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkID=2195404&clcid=0x409&culture=en-us&country=US" -OutFile "C:\temp\win.iso"
+
+      - name: Auth ngrok
+        run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: Enable Terminal Server
+        run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+
+      - name: Enable Remote Desktop Firewall Rule
+        run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+      - name: Enable RDP User Authentication
+        run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+
+      - name: Set Local User Password
+        run: New-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd" -Force)
+
+      - name: Set Shutdown Time
+        run: shutdown /s /t 86400000
+
+      - name: Run Virtual Machine with Windows 10 ISO
+        run: qemu-system-x86_64 -m 4G -boot d -drive file=C:/temp/win.iso,media=cdrom -drive file=win.img,format=raw -device usb-ehci,id=usb,bus=pci.0,addr=0x4 -device usb-tablet -vnc :0 -smp cores=4 -device e1000,netdev=n0 -netdev user,id=n0 -vga qxl -accel kvm -bios bios64.bin
